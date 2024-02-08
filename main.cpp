@@ -8,20 +8,27 @@
 #include <thread>
 #include <atomic>
 
+// Version 1.3.0.2
+//namespace offsets {
+//   const auto LocalPlayer = 0x17E0A8;
+//   const auto ViewMatrix = 0x17DFD0;
+//   const auto EntityList = 0x18AC04;
+//   const auto AmountOfPlayers = 0x18AC0C;
+//}
+
+// Version 1.3.0.0 (offsets from a trainer on github)
 namespace offsets {
-    const auto LocalPlayer = 0x17E0A8;
-    const auto ViewMatrix = 0x17DFD0;
-    const auto EntityList = 0x18AC04;
-    const auto AmountOfPlayers = 0x18AC0C;
+    const auto LocalPlayer = 0x17B0B8;
+    const auto ViewMatrix = 0x17AFE0;
+    const auto EntityList = 0x187C10;
+    const auto AmountOfPlayers = 0x187C18;
 }
-
-
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 extern ID3D11RenderTargetView* render_target_view;
 
-int windowWidth;
-int windowHeight;
+const auto memory = Memory("ac_client.exe");
+const auto client = memory.GetModuleAddress("ac_client.exe");
 
 std::atomic<bool> running = true;
 
@@ -31,6 +38,13 @@ void UpdateThread() {
     }
 }
 
+struct ViewMatrix {
+    float matrix[16];
+
+    float operator[](int i) const {
+        return matrix[i];
+    }
+};
 struct Vec4 {
     float x, y, z, w;
 };
@@ -44,19 +58,14 @@ struct Vec2 {
 Vec4 clipCoords;
 Vec3 xyzpos;
 Vec2 screen;
-float matrix[16] = { 0.0 };
 
 Vec3 getEntityPosition(int entitylistOffset, int i) {
-
-    const auto memory = Memory("ac_client.exe");
-    const auto client = memory.GetModuleAddress("ac_client.exe");
-
     const auto localPlayer = memory.Read<std::int32_t>(client + offsets::LocalPlayer);
     const auto entityList = memory.Read<std::int32_t>(client + offsets::EntityList);
     const auto entity = memory.Read<std::int32_t>(entityList + 4 * i);
 
     const auto x = memory.Read<float>(entity + 0x4);
-    const auto y = memory.Read<float>(entity + 0x30);
+    const auto y = memory.Read<float>(entity + 0xC);
     const auto z = memory.Read<float>(entity + 0x8);
     ImGui::Text("Client Address: 0x%X", client);
     ImGui::Text("EntityList Address: 0x%X", entityList);
@@ -68,30 +77,16 @@ Vec3 getEntityPosition(int entitylistOffset, int i) {
     return { x, y, z };
 }
 
-float* initializeMatrix(int matrixOffset) {
-    const auto memory = Memory("ac_client.exe");
-    const auto client = memory.GetModuleAddress("ac_client.exe");
 
-    float* matrix = new float[16];
-
-    
-    for (int i = 0; i < 16; i++) {
-        matrix[i] = memory.Read<float>(client + matrixOffset + i * sizeof(float));
-    }
-    return matrix;
-}
-
-bool WorldToScreen(Vec3 pos, Vec2& screen, float matrix[16], int windowWidth, int windowHeight) {
+bool WorldToScreen(Vec3 pos, Vec2& screen, ViewMatrix matrix, int windowWidth, int windowHeight) {
     clipCoords.x = pos.x * matrix[0] + pos.y * matrix[4] + pos.z * matrix[8] + matrix[12];
     clipCoords.y = pos.x * matrix[1] + pos.y * matrix[5] + pos.z * matrix[9] + matrix[13];
     clipCoords.z = pos.x * matrix[2] + pos.y * matrix[6] + pos.z * matrix[10] + matrix[14];
     clipCoords.w = pos.x * matrix[3] + pos.y * matrix[7] + pos.z * matrix[11] + matrix[15];
-
     if (clipCoords.w < 0.1f) {
         return false;
     }
 
-    ImGui::SetWindowSize(ImVec2(800, 600));
     Vec3 NDC;
     NDC.x = clipCoords.x / clipCoords.w;
     NDC.y = clipCoords.y / clipCoords.w;
@@ -108,7 +103,6 @@ bool WorldToScreen(Vec3 pos, Vec2& screen, float matrix[16], int windowWidth, in
     ImGui::Text("NDC.x: %f, NDC.y: %f, NDC.z: %f", NDC.x, NDC.y, NDC.z);
     screen.x = (windowWidth / 2 * NDC.x) + (NDC.x + windowWidth / 2);
     screen.y = -(windowHeight / 2 * NDC.y) + (NDC.y + windowHeight / 2);
-
     return true;
 }
 
@@ -289,27 +283,23 @@ INT APIENTRY WinMain(HINSTANCE instance, HINSTANCE, PSTR, INT cmd_show) {
 }
 
 void MainCode() {
-    const auto memory = Memory("ac_client.exe");
-    const auto client = memory.GetModuleAddress("ac_client.exe");
     const auto aop = memory.Read<int>(client + offsets::AmountOfPlayers);
+    ViewMatrix matrix = memory.Read<ViewMatrix>(client + offsets::ViewMatrix);
+    screen = { 0, 0 };
 
     for (int a = 1; a <= aop; a++) {
         xyzpos = getEntityPosition(offsets::EntityList, a);
-
-        float* matrix = initializeMatrix(offsets::ViewMatrix);
-
-        screen = { 0, 0 };
         if (WorldToScreen(xyzpos, screen, matrix, 1920, 1080)) {
 
             ImVec2 rectMin = ImVec2(screen.x - 10.0f, screen.y - 10.0f);
             ImVec2 rectMax = ImVec2(screen.x + 10.0f, screen.y + 10.0f);
-            ImGui::GetBackgroundDrawList()->AddRectFilled(rectMin, rectMax, ImColor(1.f, 0.f, 0.f));
+            // Draw a box outline using lines
+            ImGui::GetBackgroundDrawList()->AddRect(rectMin, rectMax, ImColor(1.f, 0.f, 0.f));
 
             ImGui::Text("Player %d:", a);
             ImGui::Text("clipCoords.w: %f", clipCoords.w);
             ImGui::Text("Screen.X: %f", screen.x);
             ImGui::Text("Screen.Y: %f", screen.y);
         }
-        delete[] matrix;
     }
 }
