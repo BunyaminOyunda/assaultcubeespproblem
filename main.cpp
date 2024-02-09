@@ -33,9 +33,8 @@ namespace offsets {
     const auto ViewMatrix = 0x17DFD0;
     const auto EntityList = 0x18AC04;
     const auto AmountOfPlayers = 0x18AC0C;
+    const auto Position = { 0x28, 0x30, 0x2C };
 }
-
-
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 extern ID3D11RenderTargetView* render_target_view;
@@ -43,21 +42,6 @@ extern ID3D11RenderTargetView* render_target_view;
 const auto memory = Memory("ac_client.exe");
 const auto client = memory.GetModuleAddress("ac_client.exe");
 
-std::atomic<bool> running = true;
-
-void UpdateThread() {
-    while (running) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
-}
-
-struct ViewMatrix {
-    float matrix[16];
-
-    float operator[](int i) const {
-        return matrix[i];
-    }
-};
 struct Vec4 {
     float x, y, z, w;
 };
@@ -68,38 +52,18 @@ struct Vec2 {
     float x, y;
 };
 
-Vec4 clipCoords;
-Vec3 xyzpos;
-Vec2 vScreen;
-
-Vec3 getEntityPosition(int entitylistOffset, int i) {
-    const auto localPlayer = memory.Read<std::int32_t>(client + offsets::LocalPlayer);
-    const auto entityList = memory.Read<std::int32_t>(client + offsets::EntityList);
-    const auto entity = memory.Read<std::int32_t>(entityList + 4 * i);
-
-    const auto x = memory.Read<float>(entity + 0x28);
-    const auto y = memory.Read<float>(entity + 0x30);
-    const auto z = memory.Read<float>(entity + 0x2C);
-    ImGui::Text("Client Address: 0x%X", client);
-    ImGui::Text("EntityList Address: 0x%X", entityList);
-    ImGui::Text("Entity Address: 0x%X", entity);
-    ImGui::Text("x: %f", x);
-    ImGui::Text("y: %f", y);
-    ImGui::Text("z: %f", z);
-
-    return { x, y, z };
-}
-XMMATRIX Viewmatrix;
 const auto HEIGHT = 1920;
 const auto WIDTH = 1080;
-bool WorldToScreen(Vec3 world, Vec2& screen) {
+
+bool WorldToScreen(Vec3 world, Vec2& screen)
+{
+    XMMATRIX Viewmatrix = memory.Read<XMMATRIX>(client + offsets::ViewMatrix);
+
     XMFLOAT4X4 matView;
     XMStoreFloat4x4(&matView, Viewmatrix);
+
     XMVECTOR worldPos = XMVectorSet(world.x, world.y, world.z, 1.0f);
     XMVECTOR screenSpace = XMVector4Transform(worldPos, Viewmatrix);
-
-
-    screenSpace = XMVectorDivide(screenSpace, XMVectorSplatW(screenSpace));
 
     const float epsilon = (WIDTH > HEIGHT) ?
         (WIDTH * 0.00001f) :
@@ -113,13 +77,14 @@ bool WorldToScreen(Vec3 world, Vec2& screen) {
         return false;
     }
 
+    screenSpace = XMVectorDivide(screenSpace, XMVectorSplatW(screenSpace));
+
     screen.x = (WIDTH / 2.0f) + (XMVectorGetX(screenSpace) * WIDTH) / 2.0f;
     screen.y = (HEIGHT / 2.0f) - (XMVectorGetY(screenSpace) * HEIGHT) / 2.0f;
-    ImGui::Text("Raw Position: x=%f, y=%f, z=%f", world.x, world.y, world.z);
+
     return true;
 }
 
-void MainCode();
 
 LRESULT CALLBACK window_procedure(HWND window, UINT message, WPARAM w_param, LPARAM l_param) {
     if (ImGui_ImplWin32_WndProcHandler(window, message, w_param, l_param)) {
@@ -236,19 +201,14 @@ INT APIENTRY WinMain(HINSTANCE instance, HINSTANCE, PSTR, INT cmd_show) {
     ImGui_ImplWin32_Init(window);
     ImGui_ImplDX11_Init(device, device_context);
 
-    std::thread updateThread(UpdateThread);
-
-    while (running) {
+    while (true) {
         MSG msg;
         while (PeekMessage(&msg, nullptr, 0U, 0U, PM_REMOVE)) {
             TranslateMessage(&msg);
             DispatchMessage(&msg);
             if (msg.message == WM_QUIT) {
-                running = false;
+               
             }
-        }
-        if (!running) {
-            break;
         }
 
         ImGui_ImplDX11_NewFrame();
@@ -269,8 +229,6 @@ INT APIENTRY WinMain(HINSTANCE instance, HINSTANCE, PSTR, INT cmd_show) {
 
         swap_chain->Present(1U, 0U);
     }
-
-    updateThread.join();
 
     ImGui_ImplDX11_Shutdown();
     ImGui_ImplWin32_Shutdown();
@@ -295,7 +253,8 @@ INT APIENTRY WinMain(HINSTANCE instance, HINSTANCE, PSTR, INT cmd_show) {
     return 0;
 }
 
-void MainCode() {
+int WINAPI WinMain()
+{
     const auto aop = memory.Read<int>(client + offsets::AmountOfPlayers);
     XMMATRIX Viewmatrix = memory.Read<XMMATRIX>(offsets::ViewMatrix);
 
