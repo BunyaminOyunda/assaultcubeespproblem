@@ -7,6 +7,9 @@
 #include <imgui/imgui_impl_win32.h>
 #include <thread>
 #include <atomic>
+#include <directxmath.h>
+using namespace DirectX;
+
 
 // Version 1.2.0.2
 //namespace offsets {
@@ -26,10 +29,10 @@
 
 // Version 1.3.0.2
 namespace offsets {
-   const auto LocalPlayer = 0x17E0A8;
-   const auto ViewMatrix = 0x17DFD0;
-   const auto EntityList = 0x18AC04;
-   const auto AmountOfPlayers = 0x18AC0C;
+    const auto LocalPlayer = 0x17E0A8;
+    const auto ViewMatrix = 0x17DFD0;
+    const auto EntityList = 0x18AC04;
+    const auto AmountOfPlayers = 0x18AC0C;
 }
 
 
@@ -67,16 +70,16 @@ struct Vec2 {
 
 Vec4 clipCoords;
 Vec3 xyzpos;
-Vec2 screen;
+Vec2 vScreen;
 
 Vec3 getEntityPosition(int entitylistOffset, int i) {
     const auto localPlayer = memory.Read<std::int32_t>(client + offsets::LocalPlayer);
     const auto entityList = memory.Read<std::int32_t>(client + offsets::EntityList);
     const auto entity = memory.Read<std::int32_t>(entityList + 4 * i);
 
-    const auto x = memory.Read<float>(entity + 0x4);
-    const auto y = memory.Read<float>(entity + 0xC);
-    const auto z = memory.Read<float>(entity + 0x8);
+    const auto x = memory.Read<float>(entity + 0x28);
+    const auto y = memory.Read<float>(entity + 0x30);
+    const auto z = memory.Read<float>(entity + 0x2C);
     ImGui::Text("Client Address: 0x%X", client);
     ImGui::Text("EntityList Address: 0x%X", entityList);
     ImGui::Text("Entity Address: 0x%X", entity);
@@ -86,39 +89,33 @@ Vec3 getEntityPosition(int entitylistOffset, int i) {
 
     return { x, y, z };
 }
+XMMATRIX Viewmatrix;
+const auto HEIGHT = 1920;
+const auto WIDTH = 1080;
+bool WorldToScreen(Vec3 world, Vec2& screen) {
+    XMFLOAT4X4 matView;
+    XMStoreFloat4x4(&matView, Viewmatrix);
+    XMVECTOR worldPos = XMVectorSet(world.x, world.y, world.z, 1.0f);
+    XMVECTOR screenSpace = XMVector4Transform(worldPos, Viewmatrix);
 
 
-bool WorldToScreen(Vec3 pos, Vec2& screen, ViewMatrix matrix, int windowWidth, int windowHeight) {
-//    clipCoords.x = pos.x * matrix[0] + pos.y * matrix[1] + pos.z * matrix[2] + matrix[3];
-//    clipCoords.y = pos.x * matrix[4] + pos.y * matrix[5] + pos.z * matrix[6] + matrix[7];
-//    clipCoords.z = pos.x * matrix[8] + pos.y * matrix[9] + pos.z * matrix[10] + matrix[11];
-//    clipCoords.w = pos.x * matrix[12] + pos.y * matrix[13] + pos.z * matrix[14] + matrix[15];
+    screenSpace = XMVectorDivide(screenSpace, XMVectorSplatW(screenSpace));
 
-    clipCoords.x = pos.x * matrix[0] + pos.y * matrix[4] + pos.z * matrix[8] + matrix[12];
-    clipCoords.y = pos.x * matrix[1] + pos.y * matrix[5] + pos.z * matrix[9] + matrix[13];
-    clipCoords.z = pos.x * matrix[2] + pos.y * matrix[6] + pos.z * matrix[10] + matrix[14];
-    clipCoords.w = pos.x * matrix[3] + pos.y * matrix[7] + pos.z * matrix[11] + matrix[15];
+    const float epsilon = (WIDTH > HEIGHT) ?
+        (WIDTH * 0.00001f) :
+        (HEIGHT * 0.00001f);
 
-    if (clipCoords.w < 0.1f) {
+    if (XMVectorGetW(screenSpace) < epsilon)
+    {
+        screen.x = WIDTH * 100000;
+        screen.y = HEIGHT * 100000;
+
         return false;
     }
 
-    Vec3 NDC;
-    NDC.x = clipCoords.x / clipCoords.w;
-    NDC.y = clipCoords.y / clipCoords.w;
-    NDC.z = clipCoords.z / clipCoords.w;
-
-    ImGui::Text("Raw Position: x=%f, y=%f, z=%f", pos.x, pos.y, pos.z);
-    ImGui::Text("Matrix:");
-    for (int i = 0; i < 4; ++i) {
-        for (int j = 0; j < 4; ++j) {
-            ImGui::Text("[%d][%d]: %f", i, j, matrix[i * 4 + j]);
-        }
-    }
-    ImGui::Text("ClipCoords: x=%f, y=%f, z=%f, w=%f", clipCoords.x, clipCoords.y, clipCoords.z, clipCoords.w);
-    ImGui::Text("NDC.x: %f, NDC.y: %f, NDC.z: %f", NDC.x, NDC.y, NDC.z);
-    screen.x = (windowWidth / 2 * NDC.x) + (NDC.x + windowWidth / 2);
-    screen.y = -(windowHeight / 2 * NDC.y) + (NDC.y + windowHeight / 2);
+    screen.x = (WIDTH / 2.0f) + (XMVectorGetX(screenSpace) * WIDTH) / 2.0f;
+    screen.y = (HEIGHT / 2.0f) - (XMVectorGetY(screenSpace) * HEIGHT) / 2.0f;
+    ImGui::Text("Raw Position: x=%f, y=%f, z=%f", world.x, world.y, world.z);
     return true;
 }
 
@@ -300,24 +297,22 @@ INT APIENTRY WinMain(HINSTANCE instance, HINSTANCE, PSTR, INT cmd_show) {
 
 void MainCode() {
     const auto aop = memory.Read<int>(client + offsets::AmountOfPlayers);
-    ViewMatrix matrix = memory.Read<ViewMatrix>(client + offsets::ViewMatrix);
+    XMMATRIX Viewmatrix = memory.Read<XMMATRIX>(offsets::ViewMatrix);
 
 
     for (int a = 1; a <= aop; a++) {
         xyzpos = getEntityPosition(offsets::EntityList, a);
 
-            screen = { 0, 0 };
-        if (WorldToScreen(xyzpos, screen, matrix, 1920, 1080)) {
+        vScreen = { 0, 0 };
+        if (!WorldToScreen(xyzpos, vScreen))
+            continue;
 
-            ImVec2 rectMin = ImVec2(screen.x - 10.0f, screen.y - 10.0f);
-            ImVec2 rectMax = ImVec2(screen.x + 10.0f, screen.y + 10.0f);
-            // Draw a box outline using lines
-            ImGui::GetBackgroundDrawList()->AddRect(rectMin, rectMax, ImColor(1.f, 0.f, 0.f));
+        // need to draw here
 
-            ImGui::Text("Player %d:", a);
-            ImGui::Text("clipCoords.w: %f", clipCoords.w);
-            ImGui::Text("Screen.x: %f", screen.x);
-            ImGui::Text("Screen.y: %f", screen.y);
-        }
+
+        ImGui::Text("Player %d:", a);
+        ImGui::Text("clipCoords.w: %f", clipCoords.w);
+        ImGui::Text("Screen.x: %f", vScreen.x);
+        ImGui::Text("Screen.y: %f", vScreen.y);
     }
 }
