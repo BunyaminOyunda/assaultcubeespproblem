@@ -48,7 +48,7 @@ const auto client = memory.GetModuleAddress("ac_client.exe");
 
 void draw_line(int x, int y, int x1, int y1, ImColor color)
 {
-    ImGui::GetForegroundDrawList()->AddLine(ImVec2(static_cast<float>(x), static_cast<float>(y)), ImVec2(static_cast<float>(x1), static_cast<float>(y1)), color);
+    ImGui::GetBackgroundDrawList()->AddLine(ImVec2(static_cast<float>(x), static_cast<float>(y)), ImVec2(static_cast<float>(x1), static_cast<float>(y1)), color);
 }
 
 struct Vec4 {
