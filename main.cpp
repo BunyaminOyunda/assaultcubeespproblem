@@ -33,8 +33,10 @@ namespace offsets {
     const auto ViewMatrix = 0x17DFD0;
     const auto EntityList = 0x18AC04;
     const auto AmountOfPlayers = 0x18AC0C;
-    const auto Position = { 0x28, 0x30, 0x2C };
-}
+    const auto xPosition = 0x28;
+    const auto yPosition = 0x30;
+    const auto zPosition = 0x2C;
+};
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 extern ID3D11RenderTargetView* render_target_view;
@@ -200,14 +202,16 @@ INT APIENTRY WinMain(HINSTANCE instance, HINSTANCE, PSTR, INT cmd_show) {
 
     ImGui_ImplWin32_Init(window);
     ImGui_ImplDX11_Init(device, device_context);
+    MSG message;
+    while (!GetAsyncKeyState(VK_END))
+    {
+        while (PeekMessage(&message, NULL, 0, 0, PM_REMOVE))
+        {
+            TranslateMessage(&message);
+            DispatchMessage(&message);
 
-    while (true) {
-        MSG msg;
-        while (PeekMessage(&msg, nullptr, 0U, 0U, PM_REMOVE)) {
-            TranslateMessage(&msg);
-            DispatchMessage(&msg);
-            if (msg.message == WM_QUIT) {
-               
+            if (message.message == WM_QUIT) {
+                return message.wParam;
             }
         }
 
@@ -215,19 +219,19 @@ INT APIENTRY WinMain(HINSTANCE instance, HINSTANCE, PSTR, INT cmd_show) {
         ImGui_ImplWin32_NewFrame();
 
         ImGui::NewFrame();
-        ImGui::Begin("Overlay Window");
-        MainCode();
 
-        ImGui::End();
+        // ESP here
 
         ImGui::Render();
-        constexpr float color[4]{ 0.f, 0.f, 0.f, 0.f };
-        device_context->OMSetRenderTargets(1U, &render_target_view, nullptr);
-        device_context->ClearRenderTargetView(render_target_view, color);
+
+        float clear[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+        device_context->OMSetRenderTargets(1, &render_target_view, nullptr);
+        device_context->ClearRenderTargetView(render_target_view, clear);
 
         ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+        swap_chain->Present(1, 0);
 
-        swap_chain->Present(1U, 0U);
+        Sleep(10);
     }
 
     ImGui_ImplDX11_Shutdown();
@@ -251,27 +255,4 @@ INT APIENTRY WinMain(HINSTANCE instance, HINSTANCE, PSTR, INT cmd_show) {
     UnregisterClassW(wc.lpszClassName, wc.hInstance);
 
     return 0;
-}
-
-int WINAPI WinMain()
-{
-    const auto aop = memory.Read<int>(client + offsets::AmountOfPlayers);
-    XMMATRIX Viewmatrix = memory.Read<XMMATRIX>(offsets::ViewMatrix);
-
-
-    for (int a = 1; a <= aop; a++) {
-        xyzpos = getEntityPosition(offsets::EntityList, a);
-
-        vScreen = { 0, 0 };
-        if (!WorldToScreen(xyzpos, vScreen))
-            continue;
-
-        // need to draw here
-
-
-        ImGui::Text("Player %d:", a);
-        ImGui::Text("clipCoords.w: %f", clipCoords.w);
-        ImGui::Text("Screen.x: %f", vScreen.x);
-        ImGui::Text("Screen.y: %f", vScreen.y);
-    }
 }
