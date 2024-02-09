@@ -8,21 +8,31 @@
 #include <thread>
 #include <atomic>
 
-// Version 1.3.0.2
+// Version 1.2.0.2
 //namespace offsets {
-//   const auto LocalPlayer = 0x17E0A8;
-//   const auto ViewMatrix = 0x17DFD0;
-//   const auto EntityList = 0x18AC04;
-//   const auto AmountOfPlayers = 0x18AC0C;
+//    const auto LocalPlayer = 0x10F4F4;
+//    const auto EntityList = 0x10F4F8;
+//    const auto AmountOfPlayers = 0x10F500;
+//    const auto ViewMatrix = 0x101AE8;
 //}
 
 // Version 1.3.0.0 (offsets from a trainer on github)
+//namespace offsets {
+//    const auto LocalPlayer = 0x17B0B8;
+//    const auto ViewMatrix = 0x17AFE0;
+//    const auto EntityList = 0x187C10;
+//    const auto AmountOfPlayers = 0x187C18;
+//}
+
+// Version 1.3.0.2
 namespace offsets {
-    const auto LocalPlayer = 0x17B0B8;
-    const auto ViewMatrix = 0x17AFE0;
-    const auto EntityList = 0x187C10;
-    const auto AmountOfPlayers = 0x187C18;
+   const auto LocalPlayer = 0x17E0A8;
+   const auto ViewMatrix = 0x17DFD0;
+   const auto EntityList = 0x18AC04;
+   const auto AmountOfPlayers = 0x18AC0C;
 }
+
+
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 extern ID3D11RenderTargetView* render_target_view;
@@ -79,10 +89,16 @@ Vec3 getEntityPosition(int entitylistOffset, int i) {
 
 
 bool WorldToScreen(Vec3 pos, Vec2& screen, ViewMatrix matrix, int windowWidth, int windowHeight) {
+//    clipCoords.x = pos.x * matrix[0] + pos.y * matrix[1] + pos.z * matrix[2] + matrix[3];
+//    clipCoords.y = pos.x * matrix[4] + pos.y * matrix[5] + pos.z * matrix[6] + matrix[7];
+//    clipCoords.z = pos.x * matrix[8] + pos.y * matrix[9] + pos.z * matrix[10] + matrix[11];
+//    clipCoords.w = pos.x * matrix[12] + pos.y * matrix[13] + pos.z * matrix[14] + matrix[15];
+
     clipCoords.x = pos.x * matrix[0] + pos.y * matrix[4] + pos.z * matrix[8] + matrix[12];
     clipCoords.y = pos.x * matrix[1] + pos.y * matrix[5] + pos.z * matrix[9] + matrix[13];
     clipCoords.z = pos.x * matrix[2] + pos.y * matrix[6] + pos.z * matrix[10] + matrix[14];
     clipCoords.w = pos.x * matrix[3] + pos.y * matrix[7] + pos.z * matrix[11] + matrix[15];
+
     if (clipCoords.w < 0.1f) {
         return false;
     }
@@ -285,10 +301,12 @@ INT APIENTRY WinMain(HINSTANCE instance, HINSTANCE, PSTR, INT cmd_show) {
 void MainCode() {
     const auto aop = memory.Read<int>(client + offsets::AmountOfPlayers);
     ViewMatrix matrix = memory.Read<ViewMatrix>(client + offsets::ViewMatrix);
-    screen = { 0, 0 };
+
 
     for (int a = 1; a <= aop; a++) {
         xyzpos = getEntityPosition(offsets::EntityList, a);
+
+            screen = { 0, 0 };
         if (WorldToScreen(xyzpos, screen, matrix, 1920, 1080)) {
 
             ImVec2 rectMin = ImVec2(screen.x - 10.0f, screen.y - 10.0f);
@@ -298,8 +316,8 @@ void MainCode() {
 
             ImGui::Text("Player %d:", a);
             ImGui::Text("clipCoords.w: %f", clipCoords.w);
-            ImGui::Text("Screen.X: %f", screen.x);
-            ImGui::Text("Screen.Y: %f", screen.y);
+            ImGui::Text("Screen.x: %f", screen.x);
+            ImGui::Text("Screen.y: %f", screen.y);
         }
     }
 }
