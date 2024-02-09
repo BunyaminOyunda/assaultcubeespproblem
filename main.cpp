@@ -28,21 +28,28 @@ using namespace DirectX;
 //}
 
 // Version 1.3.0.2
-namespace offsets {
-    const auto LocalPlayer = 0x17E0A8;
-    const auto ViewMatrix = 0x17DFD0;
-    const auto EntityList = 0x18AC04;
-    const auto AmountOfPlayers = 0x18AC0C;
-    const auto xPosition = 0x28;
-    const auto yPosition = 0x30;
-    const auto zPosition = 0x2C;
-};
+namespace offsets
+{
+    constexpr auto LocalPlayer = 0x17E0A8;
+    constexpr auto ViewMatrix = 0x17DFD0;
+    constexpr auto EntityList = 0x18AC04;
+    constexpr auto AmountOfPlayers = 0x18AC0C;
+
+    constexpr auto Position = 0x28;
+    constexpr auto Team = 0x30C;
+    constexpr auto Health = 0xEC;
+}
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 extern ID3D11RenderTargetView* render_target_view;
 
 const auto memory = Memory("ac_client.exe");
 const auto client = memory.GetModuleAddress("ac_client.exe");
+
+void draw_line(int x, int y, int x1, int y1, ImColor color)
+{
+    ImGui::GetForegroundDrawList()->AddLine(ImVec2(static_cast<float>(x), static_cast<float>(y)), ImVec2(static_cast<float>(x1), static_cast<float>(y1)), color);
+}
 
 struct Vec4 {
     float x, y, z, w;
@@ -221,6 +228,29 @@ INT APIENTRY WinMain(HINSTANCE instance, HINSTANCE, PSTR, INT cmd_show) {
         ImGui::NewFrame();
 
         // ESP here
+        uintptr_t localplayer = memory.Read<uintptr_t>(client + offsets::LocalPlayer);
+        uintptr_t localplayer_team = memory.Read<uintptr_t>(localplayer + offsets::Team);
+
+        uintptr_t entitylist = memory.Read<uintptr_t>(client + offsets::EntityList);
+        uintptr_t maxentities = memory.Read<uintptr_t>(client + offsets::AmountOfPlayers);
+
+        Vec2 vScreen;
+        for (size_t i = 0; i < maxentities; i++)
+        {
+            uintptr_t enemy = memory.Read<uintptr_t>(entitylist + (i * 0x4));
+            uintptr_t enemy_team = memory.Read<uintptr_t>(enemy + offsets::Team);
+            uintptr_t enemy_health = memory.Read<uintptr_t>(enemy + offsets::Health);
+
+            Vec3 enemy_pos = memory.Read<Vec3>(enemy + offsets::Position);
+
+            if (!enemy || enemy_team == localplayer_team || enemy_health <= 0)
+                continue;
+
+            if (!WorldToScreen(enemy_pos, vScreen))
+                continue;
+
+            draw_line(WIDTH / 2, HEIGHT, vScreen.x, vScreen.y, ImColor(255, 255, 255));
+        }
 
         ImGui::Render();
 
